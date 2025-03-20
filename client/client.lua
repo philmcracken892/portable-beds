@@ -30,12 +30,12 @@ local BED_PROPS = {
     
 }
 
-
+-- Variables
 local deployedBed = nil
-local deployedBedExtra = nil 
+local deployedBedExtra = nil -- For the secondary object in combined bed
 local deployedOwner = nil
-local currentBedData = nil
-local isResting = false
+
+
 
 local function ShowBedMenu()
     local bedOptions = {}
@@ -79,17 +79,8 @@ local function RegisterBedTargeting()
             canInteract = function(entity)
                 return not isResting
             end
-        },
-        {
-            name = 'rest_at_bed',
-            event = 'rsg-beds:client:restAtBed',
-            icon = "fas fa-bed",
-            label = "Rest",
-            distance = 2.0,
-            canInteract = function(entity)
-                return not isResting
-            end
         }
+        
     })
 end
 
@@ -102,36 +93,27 @@ RegisterNetEvent('rsg-beds:client:placeBed', function(bedIndex)
         })
         return
     end
-
+    
     local bedData = BED_PROPS[bedIndex]
     if not bedData then return end
-
+    
     local coords = GetEntityCoords(PlayerPedId())
     local heading = GetEntityHeading(PlayerPedId())
     local forward = GetEntityForwardVector(PlayerPedId())
     
-    local offsetDistance = 2.0
+    
+    local offsetDistance = 1.0
     local x = coords.x + forward.x * offsetDistance
     local y = coords.y + forward.y * offsetDistance
     local z = coords.z
-
     
     RequestModel(bedData.model)
     while not HasModelLoaded(bedData.model) do
         Wait(100)
     end
-
-   
-    if bedData.secondaryModel then
-        RequestModel(bedData.secondaryModel)
-        while not HasModelLoaded(bedData.secondaryModel) do
-            Wait(100)
-        end
-    end
-
+    
     TaskStartScenarioInPlace(PlayerPedId(), GetHashKey('WORLD_HUMAN_CROUCH_INSPECT'), -1, true, false, false, false)
     Wait(2000)
-    
     
     local bedObject = CreateObject(bedData.model, x, y, z, true, false, false)
     PlaceObjectOnGroundProperly(bedObject)
@@ -142,35 +124,7 @@ RegisterNetEvent('rsg-beds:client:placeBed', function(bedIndex)
     currentBedData = bedData
     deployedOwner = GetPlayerServerId(PlayerId())
     
-   
-    if bedData.secondaryModel then
-        
-        local bedCoords = GetEntityCoords(bedObject)
-        
-        
-        local zOffset = bedData.mattressZOffset or 0.35
-        
-       
-        local mattressObject = CreateObject(
-            bedData.secondaryModel, 
-            bedCoords.x, 
-            bedCoords.y, 
-            bedCoords.z + zOffset, 
-            true, false, false
-        )
-        
-        
-        SetEntityHeading(mattressObject, heading)
-        
-        
-        
-       
-        deployedBedExtra = mattressObject
-        
-       
-        
-    end
-    
+    -- Add this line to trigger the server event to remove the item
     TriggerServerEvent('rsg-beds:server:placeBed')
     
     Wait(500)
@@ -225,105 +179,6 @@ RegisterNetEvent('rsg-beds:client:pickupBed', function()
     })
 end)
 
-RegisterNetEvent('rsg-beds:client:restAtBed', function()
-    if isResting then return end
-    
-    isResting = true
-    LocalPlayer.state:set('inv_busy', true, true)
-    
-    if not deployedBed then
-        lib.notify({
-            title = "No Bed!",
-            description = "You don't have a bed to rest on.",
-            type = 'error'
-        })
-        isResting = false
-        return
-    end
-
-    local ped = PlayerPedId()
-    local bedCoords = GetEntityCoords(deployedBed)
-    local bedHeading = GetEntityHeading(deployedBed)
-
-   
-    local isComfortableBed = currentBedData and currentBedData.secondaryModel ~= nil
-    local zOffset = isComfortableBed and 0.2 or 0.35 -- Adjust offsets accordingly
-
-    
-    if isComfortableBed and deployedBedExtra then
-        local mattressCoords = GetEntityCoords(deployedBedExtra)
-        SetEntityCoordsNoOffset(ped, mattressCoords.x, mattressCoords.y, mattressCoords.z + zOffset, true, true, true)
-    else
-       
-        SetEntityCoordsNoOffset(ped, bedCoords.x, bedCoords.y, bedCoords.z + zOffset, true, true, true)
-    end
-
-   
-    SetEntityHeading(ped, bedHeading + 180.0)
-
-    
-    local sleepScenario = isComfortableBed and 'WORLD_HUMAN_SLEEP_GROUND_PILLOW' or 'WORLD_HUMAN_SLEEP_GROUND_ARM'
-
-   
-    TaskStartScenarioAtPosition(ped, GetHashKey(sleepScenario), bedCoords.x, bedCoords.y, bedCoords.z + zOffset, bedHeading + 180.0, -1, true, false, false, false)
-
-    
-    local restDuration = isComfortableBed and 8000 or 10000 -- Faster rest for comfortable beds
-    local benefitMultiplier = isComfortableBed and 1.5 or 1.0
-
-    
-    Wait(10000)
-
-    
-    if lib.progressBar then
-        lib.progressBar({
-            duration = restDuration,
-            label = isComfortableBed and 'Resting Comfortably' or 'Resting...',
-            useWhileDead = false,
-            canCancel = false,
-            disable = {
-                car = true,
-                combat = true,
-                move = true,
-            },
-            icon = '❤️'
-        })
-    else
-        Wait(restDuration)
-    end
-
-    
-    ClearPedTasks(ped)
-    isResting = false
-    LocalPlayer.state:set('inv_busy', false, true)
-
-   
-    local stressReduction = math.floor(Config.RestBenefits.stressReduction * benefitMultiplier)
-    local healthIncrease = math.floor(Config.RestBenefits.healthIncrease * benefitMultiplier)
-    local staminaBoostDuration = math.floor(Config.RestBenefits.staminaBoostDuration * benefitMultiplier)
-
-    TriggerServerEvent('hud:server:RelieveStress', stressReduction)
-    SetEntityHealth(ped, math.min(GetEntityHealth(ped) + healthIncrease, GetEntityMaxHealth(ped)))
-
-    if Config.RestBenefits.staminaBoost then
-        TriggerEvent('rsg-beds:client:applyStaminaBoost', staminaBoostDuration)
-    end
-
-    
-    lib.notify({
-        title = 'Well Rested',
-        description = isComfortableBed and 'You feel exceptionally refreshed!' or 'You feel refreshed from resting.',
-        type = 'success'
-    })
-end)
-
-
--- Stamina boost implementation
-RegisterNetEvent('rsg-beds:client:applyStaminaBoost', function(duration)
-    -- Implement your stamina boost logic here
-    -- This is a placeholder and should be adapted to your stamina system
-    TriggerEvent('stamina:applyBoost', duration)
-end)
 
 AddEventHandler('onResourceStop', function(resourceName)
     if GetCurrentResourceName() ~= resourceName then return end
