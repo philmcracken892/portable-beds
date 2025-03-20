@@ -32,7 +32,7 @@ local BED_PROPS = {
 
 -- Variables
 local deployedBed = nil
-local deployedBedExtra = nil -- For the secondary object in combined bed
+local deployedBedExtra = nil 
 local deployedOwner = nil
 
 
@@ -124,7 +124,7 @@ RegisterNetEvent('rsg-beds:client:placeBed', function(bedIndex)
     currentBedData = bedData
     deployedOwner = GetPlayerServerId(PlayerId())
     
-    -- Add this line to trigger the server event to remove the item
+   
     TriggerServerEvent('rsg-beds:server:placeBed')
     
     Wait(500)
